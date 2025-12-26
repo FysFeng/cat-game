@@ -1,12 +1,39 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Biome, Dish, RandomEvent, GameState } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Safe API Key access that works in browser environments without strict process polyfills
+const getApiKey = () => {
+  try {
+    // Check if process is defined (Node/Vite/Webpack)
+    if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+      return process.env.API_KEY;
+    }
+  } catch (e) {
+    // Ignore error
+  }
+  return '';
+};
+
+const apiKey = getApiKey();
+const ai = new GoogleGenAI({ apiKey });
 
 // Model to use for text generation
 const MODEL_NAME = "gemini-3-flash-preview";
 
 export const generateSpecialMenu = async (biome: Biome): Promise<Dish> => {
+  if (!apiKey) {
+    console.warn("No API Key found. Using fallback menu.");
+    return {
+      id: `special_fallback_${Date.now()}`,
+      name: "Local Special",
+      icon: "🥘",
+      basePrice: 20,
+      description: "A delicious local dish (AI Offline).",
+      prepTime: 3000,
+      isSpecial: true,
+    };
+  }
+
   try {
     const prompt = `Create a special dish for a cat snack bar located in the ${biome.type} (${biome.name}). 
     Return a JSON object with: name (string), icon (single emoji), description (short string), basePrice (number 20-50).`;
@@ -55,6 +82,25 @@ export const generateSpecialMenu = async (biome: Biome): Promise<Dish> => {
 };
 
 export const generateRandomEvent = async (biome: Biome): Promise<RandomEvent> => {
+  if (!apiKey) {
+    return {
+      title: "Quiet Day",
+      description: "It's a peaceful day. No special events (AI Offline).",
+      choices: [
+        {
+          text: "Relax",
+          outcomeText: "You rested well. (+10 Stamina)",
+          apply: (s) => ({ stamina: Math.min(s.maxStamina, s.stamina + 10) })
+        },
+        {
+          text: "Clean Up",
+          outcomeText: "The truck sparkles! (+5 Reputation)",
+          apply: (s) => ({ reputation: Math.min(100, s.reputation + 5) })
+        }
+      ]
+    };
+  }
+
   try {
     const prompt = `Generate a random event for a traveling cat snack bar in the ${biome.type}.
     The event should be whimsical or slightly dangerous (like a dragon wanting a drink).
@@ -87,8 +133,6 @@ export const generateRandomEvent = async (biome: Biome): Promise<RandomEvent> =>
     const data = JSON.parse(response.text || '{}');
 
     // Map Gemini text to game mechanics
-    // This part is hardcoded to map text to mechanics for safety, 
-    // but in a full game, we might ask Gemini to suggest resource changes too.
     return {
       title: data.title || "Unexpected Visitor",
       description: data.description || "Someone approaches your stall.",
